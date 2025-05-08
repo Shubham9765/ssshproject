@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Setup Admin - FormFill Service</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .password-strength {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .password-strength.weak { color: #e74c3c; }
+        .password-strength.medium { color: #f39c12; }
+        .password-strength.strong { color: #2ecc71; }
+        
+        .password-requirements {
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            color: #666;
+        }
+        
+        .password-requirements ul {
+            list-style: none;
+            padding-left: 0;
+            margin-top: 0.5rem;
+        }
+        
+        .password-requirements li {
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .password-requirements li::before {
+            content: "•";
+            margin-right: 0.5rem;
+            color: #999;
+        }
+        
+        .password-requirements li.valid::before {
+            content: "✓";
+            color: #2ecc71;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">FormFill Service</div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="form-container">
+            <h2>Setup Admin User</h2>
+            <form id="setupForm">
+                <div class="form-group">
+                    <label for="adminEmail">Admin Email</label>
+                    <input type="email" id="adminEmail" name="adminEmail" required 
+                           placeholder="Enter admin email address">
+                </div>
+                <div class="form-group">
+                    <label for="adminPassword">Admin Password</label>
+                    <input type="password" id="adminPassword" name="adminPassword" required
+                           placeholder="Enter a strong password"
+                           minlength="8">
+                    <div id="passwordStrength" class="password-strength"></div>
+                    <div class="password-requirements">
+                        <p>Password must contain:</p>
+                        <ul>
+                            <li id="length">At least 8 characters</li>
+                            <li id="uppercase">One uppercase letter</li>
+                            <li id="lowercase">One lowercase letter</li>
+                            <li id="number">One number</li>
+                            <li id="special">One special character</li>
+                        </ul>
+                    </div>
+                </div>
+                <button type="submit" class="btn primary">Create Admin User</button>
+            </form>
+            <div id="result" style="margin-top: 1rem;"></div>
+        </div>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script>
+        // Password strength checker
+        function checkPasswordStrength(password) {
+            const requirements = {
+                length: password.length >= 8,
+                uppercase: /[A-Z]/.test(password),
+                lowercase: /[a-z]/.test(password),
+                number: /[0-9]/.test(password),
+                special: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+            };
+
+            // Update requirement indicators
+            Object.keys(requirements).forEach(req => {
+                const element = document.getElementById(req);
+                if (requirements[req]) {
+                    element.classList.add('valid');
+                } else {
+                    element.classList.remove('valid');
+                }
+            });
+
+            // Calculate strength
+            const strength = Object.values(requirements).filter(Boolean).length;
+            const strengthElement = document.getElementById('passwordStrength');
+            
+            if (strength <= 2) {
+                strengthElement.textContent = 'Weak Password';
+                strengthElement.className = 'password-strength weak';
+            } else if (strength <= 4) {
+                strengthElement.textContent = 'Medium Password';
+                strengthElement.className = 'password-strength medium';
+            } else {
+                strengthElement.textContent = 'Strong Password';
+                strengthElement.className = 'password-strength strong';
+            }
+
+            return strength === 5;
+        }
+
+        // Password input handler
+        document.getElementById('adminPassword').addEventListener('input', function(e) {
+            checkPasswordStrength(e.target.value);
+        });
+
+        // Form submission handler
+        document.getElementById('setupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const adminEmail = document.getElementById('adminEmail').value;
+            const adminPassword = document.getElementById('adminPassword').value;
+            const resultDiv = document.getElementById('result');
+            const submitButton = e.target.querySelector('button[type="submit"]');
+
+            // Validate password strength
+            if (!checkPasswordStrength(adminPassword)) {
+                resultDiv.innerHTML = `
+                    <div style="color: red; padding: 1rem; background: #ffebee; border-radius: 5px;">
+                        Please use a stronger password that meets all requirements.
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                submitButton.disabled = true;
+                submitButton.classList.add('loading');
+                
+                // 1. Create the user in Supabase Auth
+                const { data: authData, error: authError } = await supabase.auth.signUp({
+                    email: adminEmail,
+                    password: adminPassword
+                });
+
+                if (authError) throw authError;
+
+                // 2. Add the user to admins table
+                const { error: adminError } = await supabase
+                    .from('admins')
+                    .insert([
+                        {
+                            id: authData.user.id,
+                            email: adminEmail
+                        }
+                    ]);
+
+                if (adminError) throw adminError;
+
+                resultDiv.innerHTML = `
+                    <div style="color: green; padding: 1rem; background: #e8f5e9; border-radius: 5px;">
+                        <p>Admin user created successfully!</p>
+                        <p>Email: ${adminEmail}</p>
+                        <p>Please save these credentials securely.</p>
+                        <p style="margin-top: 1rem;">
+                            <a href="admin/login.html" class="btn secondary">Go to Admin Login</a>
+                        </p>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div style="color: red; padding: 1rem; background: #ffebee; border-radius: 5px;">
+                        Error: ${error.message}
+                    </div>
+                `;
+            } finally {
+                submitButton.disabled = false;
+                submitButton.classList.remove('loading');
+            }
+        });
+    </script>
+</body>
+</html> 
